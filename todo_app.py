@@ -34,6 +34,7 @@ class TodoApp:
         self.todo_file = self.app_dir / "todo.txt"
         self.config = self.load_config()
         
+
     def load_config(self):
         """Load or create configuration"""
         default_config = {
@@ -45,7 +46,33 @@ class TodoApp:
                 "image_quality": "high", "image_size": "1024x1024",
                 "image_style": "modern digital art with vibrant colors",
                 "ai_image_prompt_template": "Create a visually striking image that represents the following tasks: {tasks}.",
-                "background_color": [20, 20, 30], "text_color": [255, 255, 255], "completed_color": [128, 128, 128]
+                "background_color": [20, 20, 30], "text_color": [255, 255, 255], "completed_color": [128, 128, 128],
+                "design_system": {
+                    "grid_unit": 8,
+                    "column_count": 12,
+                    "accent_color": [100, 200, 255],
+                    "surface_color": [28, 30, 42],
+                    "overlay_color": [35, 38, 54],
+                    "overlay_alpha": 0.92,
+                    "typography": {
+                        "base_size": 16,
+                        "title_scale": 2.5,
+                        "headline_scale": 1.25,
+                        "body_scale": 1.0
+                    },
+                    "modules": {
+                        "card_min_height": 160,
+                        "card_padding": 24,
+                        "border_radius": 16,
+                        "image_aspect_ratio": 1.0
+                    },
+                    "container_padding": 32,
+                    "vertical_padding_ratio": 0.1,
+                    "section_spacing": 48,
+                    "max_visible_tasks": 5,
+                    "enable_shadows": True,
+                    "enable_gradient_bg": True
+                }
             },
             "system": {"shortcuts": {"desktop": True, "start_menu": True, "startup": True}}
         }

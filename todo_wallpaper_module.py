@@ -2,6 +2,7 @@
 """
 Todo Wallpaper Module - Dynamic Wallpaper Generator
 Creates desktop wallpapers from todo lists with optional AI imagery
+Enhanced with unified design system
 """
 
 import os
@@ -12,7 +13,7 @@ import subprocess
 import base64
 from datetime import datetime
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 try:
     import watchdog.events
@@ -33,7 +34,7 @@ except ImportError:
     pass
 
 class TodoWallpaperGenerator:
-    """Dynamic wallpaper generator that monitors todo list changes"""
+    """Dynamic wallpaper generator with unified design system"""
     
     def __init__(self, config=None):
         self.config = config or {}
@@ -43,17 +44,12 @@ class TodoWallpaperGenerator:
         self.ai_image_file = Path("ai_todo_image.png")
         
         self.resolution = tuple(self.config.get('resolution', [2560, 1440]))
-        self.background_color = tuple(self.config.get('background_color', [20, 20, 30]))
-        self.text_color = tuple(self.config.get('text_color', [255, 255, 255]))
-        self.completed_color = tuple(self.config.get('completed_color', [128, 128, 128]))
-        self.title_color = tuple(self.config.get('title_color', [100, 200, 255]))
         
-        self.padding = self.config.get('padding', 30)
-        self.line_spacing = self.config.get('line_spacing', 8)
-        self.font_size = self.config.get('font_size', 18)
-        self.title_font_size = self.config.get('title_font_size', 32)
-        self.opacity = self.config.get('opacity', 0.85)
-        self.todo_width_ratio = self.config.get('todo_width_ratio', 0.33)
+        # Load design system from config if available
+        self.design_config = self.config.get('design_system', {})
+        
+        # Design System Configuration
+        self.setup_design_system()
         
         self.use_ai_images = self.config.get('use_ai_images', False) and OpenAI is not None
         self.openai_api_key = self.config.get('openai_api_key') or os.environ.get('OPENAI_API_KEY')
@@ -77,10 +73,85 @@ class TodoWallpaperGenerator:
                 print(f"Failed to initialize OpenAI: {e}")
                 self.use_ai_images = False
     
-    def get_font(self, size):
-        """Get system font with fallback"""
+    def setup_design_system(self):
+        """Initialize unified design system"""
+        # Grid system
+        self.grid_unit = self.design_config.get('grid_unit', 8)  # Base unit for spacing
+        self.column_count = self.design_config.get('column_count', 12)
+        self.column_width = self.resolution[0] // self.column_count
+        self.gutter = self.grid_unit * 3  # 24px gutters
+        
+        # Typography hierarchy (3 scales)
+        typography_config = self.design_config.get('typography', {})
+        base_size = typography_config.get('base_size', 16)
+        
+        self.typography = {
+            'title': {
+                'size': int(base_size * typography_config.get('title_scale', 2.5)),
+                'weight': 'bold',
+                'line_height': 1.2
+            },
+            'headline': {
+                'size': int(base_size * typography_config.get('headline_scale', 1.25)),
+                'weight': 'medium',
+                'line_height': 1.4
+            },
+            'body': {
+                'size': base_size,
+                'weight': 'regular',
+                'line_height': 1.6
+            }
+        }
+        
+        # Color system with accent
+        accent = self.design_config.get('accent_color', [100, 200, 255])
+        surface = self.design_config.get('surface_color', [28, 30, 42])
+        overlay = self.design_config.get('overlay_color', [35, 38, 54])
+        
+        self.colors = {
+            'background': tuple(self.config.get('background_color', [20, 20, 30])),
+            'surface': tuple(surface),
+            'overlay': tuple(overlay),
+            'overlay_alpha': self.design_config.get('overlay_alpha', 0.92),
+            'text_primary': tuple(self.config.get('text_color', [255, 255, 255])),
+            'text_secondary': (180, 185, 195),
+            'text_disabled': tuple(self.config.get('completed_color', [110, 115, 125])),
+            'accent': tuple(accent),
+            'accent_secondary': (accent[0]-20, accent[1]-40, accent[2]-45),
+            'success': (100, 255, 150),
+            'border': (50, 54, 70),
+            'shadow': (0, 0, 0, 80)
+        }
+        
+        # Module dimensions (uniform sizing)
+        modules_config = self.design_config.get('modules', {})
+        self.modules = {
+            'card': {
+                'width': self.column_width * 4 - self.gutter,
+                'min_height': modules_config.get('card_min_height', self.grid_unit * 20),
+                'padding': modules_config.get('card_padding', self.grid_unit * 3),
+                'border_radius': modules_config.get('border_radius', self.grid_unit * 2)
+            },
+            'image': {
+                'aspect_ratio': modules_config.get('image_aspect_ratio', 1.0),  # Default to square for AI images
+                'border_radius': modules_config.get('border_radius', self.grid_unit * 2)
+            }
+        }
+        
+        # Container specs
+        self.container_padding = self.design_config.get('container_padding', self.grid_unit * 4)
+        self.vertical_padding_ratio = self.design_config.get('vertical_padding_ratio', 0.1)
+        self.section_spacing = self.design_config.get('section_spacing', self.grid_unit * 6)
+        self.max_visible_tasks = self.design_config.get('max_visible_tasks', 5)
+        self.enable_shadows = self.design_config.get('enable_shadows', True)
+        self.enable_gradient_bg = self.design_config.get('enable_gradient_bg', True)
+    
+    def get_font(self, style='body'):
+        """Get system font with fallback based on typography system"""
+        size = self.typography[style]['size']
+        
         font_paths = {
-            "Windows": ["C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/segoeui.ttf"],
+            "Windows": ["C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/arial.ttf"],
             "Darwin": ["/System/Library/Fonts/Helvetica.ttc", "/Library/Fonts/Arial.ttf"],
             "Linux": ["/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
                      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
@@ -93,6 +164,49 @@ class TodoWallpaperGenerator:
                 except:
                     pass
         return ImageFont.load_default()
+    
+    def draw_rounded_rectangle(self, draw, coords, radius, fill=None, outline=None, width=1):
+        """Draw a rounded rectangle"""
+        x1, y1, x2, y2 = coords
+        diameter = radius * 2
+        
+        # Create mask for rounded corners
+        if fill:
+            draw.rectangle([x1 + radius, y1, x2 - radius, y2], fill=fill)
+            draw.rectangle([x1, y1 + radius, x2, y2 - radius], fill=fill)
+            draw.pieslice([x1, y1, x1 + diameter, y1 + diameter], 180, 270, fill=fill)
+            draw.pieslice([x2 - diameter, y1, x2, y1 + diameter], 270, 360, fill=fill)
+            draw.pieslice([x1, y2 - diameter, x1 + diameter, y2], 90, 180, fill=fill)
+            draw.pieslice([x2 - diameter, y2 - diameter, x2, y2], 0, 90, fill=fill)
+        
+        if outline:
+            draw.arc([x1, y1, x1 + diameter, y1 + diameter], 180, 270, fill=outline, width=width)
+            draw.arc([x2 - diameter, y1, x2, y1 + diameter], 270, 360, fill=outline, width=width)
+            draw.arc([x1, y2 - diameter, x1 + diameter, y2], 90, 180, fill=outline, width=width)
+            draw.arc([x2 - diameter, y2 - diameter, x2, y2], 0, 90, fill=outline, width=width)
+            draw.line([x1 + radius, y1, x2 - radius, y1], fill=outline, width=width)
+            draw.line([x1 + radius, y2, x2 - radius, y2], fill=outline, width=width)
+            draw.line([x1, y1 + radius, x1, y2 - radius], fill=outline, width=width)
+            draw.line([x2, y1 + radius, x2, y2 - radius], fill=outline, width=width)
+    
+    def create_soft_gradient(self, size, start_color, end_color, direction='vertical'):
+        """Create a soft gradient background"""
+        width, height = size
+        gradient = Image.new('RGB', (width, height))
+        draw = ImageDraw.Draw(gradient)
+        
+        for i in range(height if direction == 'vertical' else width):
+            ratio = i / (height if direction == 'vertical' else width)
+            r = int(start_color[0] * (1 - ratio) + end_color[0] * ratio)
+            g = int(start_color[1] * (1 - ratio) + end_color[1] * ratio)
+            b = int(start_color[2] * (1 - ratio) + end_color[2] * ratio)
+            
+            if direction == 'vertical':
+                draw.line([(0, i), (width, i)], fill=(r, g, b))
+            else:
+                draw.line([(i, 0), (i, height)], fill=(r, g, b))
+        
+        return gradient
     
     def parse_todo_file(self):
         """Parse todo file and return list of tasks"""
@@ -132,7 +246,6 @@ class TodoWallpaperGenerator:
             prompt += f"\n\nStyle: {self.image_style}"
         
         print(f"Generating AI image...")
-        print(f"Prompt: {prompt[:1000]}..." if len(prompt) > 1000 else f"Prompt: {prompt}")
         
         try:
             response = self.openai_client.images.generate(
@@ -151,31 +264,140 @@ class TodoWallpaperGenerator:
             return str(self.ai_image_file)
             
         except Exception as e:
-            error_msg = str(e)
-            errors = {
-                "api_key": "Invalid or missing OpenAI API key",
-                "quality": f"Invalid quality parameter. Use 'low', 'medium', 'high', or 'auto' for gpt-image-1",
-                "size": f"Invalid size. Use '1024x1024', '1536x1024', '1024x1536', or 'auto' for gpt-image-1",
-                "content_policy": "Content policy violation. Try modifying your tasks or prompt template.",
-                "unknown_parameter": f"Unknown parameter in API call. Details: {error_msg}"
-            }
-            
-            for key, msg in errors.items():
-                if key in error_msg.lower():
-                    print(f"Error: {msg}")
-                    return None
-            
-            print(f"Error generating AI image: {error_msg}")
+            print(f"Error generating AI image: {e}")
             return None
     
+    def create_task_module(self, draw, task, x, y, width, completed_count, total_count):
+        """Create a single task module with unified design"""
+        module_height = self.modules['card']['min_height']
+        padding = self.modules['card']['padding']
+        radius = self.modules['card']['border_radius']
+        
+        # Draw module background with subtle shadow (if enabled)
+        if self.enable_shadows:
+            shadow_offset = 4
+            for i in range(shadow_offset):
+                alpha = int(40 * (1 - i/shadow_offset))
+                shadow_color = (*self.colors['shadow'][:3], alpha)
+                self.draw_rounded_rectangle(
+                    draw, 
+                    (x + i, y + i, x + width + i, y + module_height + i), 
+                    radius, 
+                    fill=shadow_color
+                )
+        
+        # Draw main container
+        self.draw_rounded_rectangle(
+            draw, 
+            (x, y, x + width, y + module_height), 
+            radius, 
+            fill=self.colors['overlay']
+        )
+        
+        # Task status indicator with accent color
+        indicator_size = self.grid_unit * 2
+        indicator_x = x + padding
+        indicator_y = y + padding + (self.typography['headline']['size'] - indicator_size) // 2
+        
+        if task['completed']:
+            draw.ellipse(
+                [indicator_x, indicator_y, indicator_x + indicator_size, indicator_y + indicator_size],
+                fill=self.colors['success']
+            )
+            # Checkmark
+            draw.line(
+                [(indicator_x + 5, indicator_y + 8), (indicator_x + 8, indicator_y + 11), 
+                 (indicator_x + 13, indicator_y + 6)],
+                fill=self.colors['overlay'], width=2
+            )
+        else:
+            draw.ellipse(
+                [indicator_x, indicator_y, indicator_x + indicator_size, indicator_y + indicator_size],
+                outline=self.colors['accent'], width=2
+            )
+        
+        # Task text with typography hierarchy
+        text_x = indicator_x + indicator_size + self.grid_unit * 2
+        text_width = width - padding * 2 - indicator_size - self.grid_unit * 2
+        
+        # Task headline
+        headline_font = self.get_font('headline')
+        task_color = self.colors['text_disabled'] if task['completed'] else self.colors['text_primary']
+        
+        # Word wrap text
+        words = task['text'].split()
+        lines = []
+        current_line = []
+        
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            bbox = draw.textbbox((0, 0), test_line, font=headline_font)
+            if bbox[2] - bbox[0] <= text_width:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(' '.join(current_line))
+                current_line = [word]
+        
+        if current_line:
+            lines.append(' '.join(current_line))
+        
+        # Draw task text (max 2 lines)
+        text_y = y + padding
+        for i, line in enumerate(lines[:2]):
+            if i == 1 and len(lines) > 2:
+                line = line + "..."
+            draw.text((text_x, text_y), line, fill=task_color, font=headline_font)
+            text_y += int(self.typography['headline']['size'] * self.typography['headline']['line_height'])
+        
+        # Progress indicator at bottom
+        progress_y = y + module_height - padding - self.grid_unit
+        progress_width = width - padding * 2
+        progress_height = self.grid_unit // 2
+        
+        # Background bar
+        draw.rectangle(
+            [x + padding, progress_y, x + padding + progress_width, progress_y + progress_height],
+            fill=self.colors['border']
+        )
+        
+        # Progress fill
+        if total_count > 0:
+            progress = completed_count / total_count
+            draw.rectangle(
+                [x + padding, progress_y, 
+                 x + padding + int(progress_width * progress), progress_y + progress_height],
+                fill=self.colors['accent']
+            )
+        
+        return module_height + self.grid_unit * 2
+    
     def create_wallpaper(self, tasks):
-        """Create wallpaper image"""
+        """Create wallpaper with unified design system"""
         width, height = self.resolution
-        todo_width = int(width * self.todo_width_ratio)
-        image_width = width - todo_width
         
-        img = Image.new('RGB', (width, height), self.background_color)
+        # Create background (gradient or solid based on config)
+        if self.enable_gradient_bg:
+            img = self.create_soft_gradient(
+                (width, height),
+                self.colors['background'],
+                (self.colors['background'][0] + 10, self.colors['background'][1] + 10, self.colors['background'][2] + 20)
+            )
+        else:
+            img = Image.new('RGB', (width, height), self.colors['background'])
         
+        # Calculate layout based on grid system
+        content_width = width - self.container_padding * 2
+        
+        # Left section for AI image (if enabled)
+        if self.use_ai_images:
+            image_section_width = self.column_width * 7
+            todo_section_width = self.column_width * 5 - self.gutter
+        else:
+            image_section_width = 0
+            todo_section_width = content_width
+        
+        # Generate AI image if needed
         if self.use_ai_images:
             tasks_content = str(tasks)
             if tasks_content != self.last_content or not self.ai_image_file.exists():
@@ -186,78 +408,155 @@ class TodoWallpaperGenerator:
             
             if self.last_ai_image and Path(self.last_ai_image).exists():
                 try:
+                    # Create image container with overlay
                     ai_img = Image.open(self.last_ai_image)
-                    ai_img.thumbnail((image_width, height), Image.Resampling.LANCZOS)
-                    x_offset = (image_width - ai_img.width) // 2
-                    y_offset = (height - ai_img.height) // 2
-                    img.paste(ai_img, (x_offset, y_offset))
+                    
+                    # AI images from OpenAI are always square (1024x1024), maintain 1:1 aspect ratio
+                    # Do not use the config aspect ratio for AI images
+                    max_dimension = min(image_section_width - self.gutter, height - self.container_padding * 2)
+                    
+                    # Keep it square
+                    target_size = min(max_dimension, ai_img.width)  # Don't upscale beyond original
+                    
+                    # Resize maintaining square aspect ratio
+                    ai_img.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
+                    actual_width = ai_img.width
+                    actual_height = ai_img.height
+                    
+                    # Create overlay for image
+                    overlay = Image.new('RGBA', (actual_width, actual_height), (0, 0, 0, 0))
+                    overlay_draw = ImageDraw.Draw(overlay)
+                    
+                    # Add rounded corners to image
+                    mask = Image.new('L', (actual_width, actual_height), 0)
+                    mask_draw = ImageDraw.Draw(mask)
+                    self.draw_rounded_rectangle(
+                        mask_draw,
+                        (0, 0, actual_width, actual_height),
+                        self.modules['image']['border_radius'],
+                        fill=255
+                    )
+                    
+                    # Apply mask
+                    output = Image.new('RGBA', (actual_width, actual_height), (0, 0, 0, 0))
+                    output.paste(ai_img, (0, 0))
+                    output.putalpha(mask)
+                    
+                    # Center image in its section
+                    image_x = self.container_padding + (image_section_width - self.gutter - actual_width) // 2
+                    image_y = (height - actual_height) // 2
+                    
+                    img.paste(output, (image_x, image_y), output)
+                    
                 except Exception as e:
                     print(f"Error loading AI image: {e}")
         
-        overlay = Image.new('RGBA', (todo_width, height), (*self.background_color, int(255 * self.opacity)))
-        img = img.convert('RGBA')
-        todo_img = Image.new('RGBA', (todo_width, height), (0, 0, 0, 0))
-        todo_img.paste(overlay, (0, 0))
+        # Create main drawing surface
+        draw = ImageDraw.Draw(img)
         
-        draw = ImageDraw.Draw(todo_img)
-        title_font = self.get_font(self.title_font_size)
-        task_font = self.get_font(self.font_size)
+        # Todo section positioning with vertical centering
+        todo_x = self.container_padding + (image_section_width if self.use_ai_images else 0)
         
-        y = self.padding
-        x_pad = self.padding
+        # Reduce container height and center vertically using config ratio
+        vertical_padding = int(height * self.vertical_padding_ratio)
+        todo_y = vertical_padding
+        container_height = height - (vertical_padding * 2)
         
-        draw.text((x_pad, y), "Today's Tasks", fill=self.title_color, font=title_font)
-        y += self.title_font_size + 5
+        # Draw main container for todos with soft overlay
+        self.draw_rounded_rectangle(
+            draw,
+            (todo_x, todo_y, todo_x + todo_section_width, todo_y + container_height),
+            self.modules['card']['border_radius'],
+            fill=(*self.colors['surface'], int(255 * self.colors['overlay_alpha']))
+        )
         
-        draw.text((x_pad, y), datetime.now().strftime("%A, %B %d"), fill=self.completed_color, font=task_font)
-        y += self.font_size + self.line_spacing * 2
+        # Title section
+        title_font = self.get_font('title')
+        title_padding = self.modules['card']['padding']
         
-        max_y = height - self.padding * 2
-        max_width = todo_width - 2 * x_pad - 40
+        # Main title with accent color
+        draw.text(
+            (todo_x + title_padding, todo_y + title_padding),
+            "Today's Focus",
+            fill=self.colors['accent'],
+            font=title_font
+        )
         
-        for task in tasks:
-            if y + self.font_size > max_y:
-                draw.text((x_pad, max_y - self.font_size), "...", fill=self.completed_color, font=task_font)
+        # Date subtitle
+        date_y = todo_y + title_padding + int(self.typography['title']['size'] * self.typography['title']['line_height'])
+        body_font = self.get_font('body')
+        draw.text(
+            (todo_x + title_padding, date_y),
+            datetime.now().strftime("%A, %B %d, %Y"),
+            fill=self.colors['text_secondary'],
+            font=body_font
+        )
+        
+        # Stats section
+        completed_count = sum(1 for t in tasks if t['completed'])
+        total_count = len(tasks)
+        
+        stats_y = date_y + int(self.typography['body']['size'] * self.typography['body']['line_height']) + self.grid_unit * 2
+        
+        # Progress summary with accent
+        headline_font = self.get_font('headline')
+        draw.text(
+            (todo_x + title_padding, stats_y),
+            f"{completed_count} of {total_count} completed",
+            fill=self.colors['accent'],
+            font=headline_font
+        )
+        
+        # Task modules
+        module_y = stats_y + int(self.typography['headline']['size'] * self.typography['headline']['line_height']) + self.section_spacing
+        module_width = todo_section_width - title_padding * 2
+        
+        # Create task modules with uniform sizing
+        visible_tasks = 0
+        max_modules = self.max_visible_tasks  # Use configurable limit
+        
+        # Calculate available space for modules
+        available_height = todo_y + container_height - module_y - title_padding - int(self.typography['body']['size'] * 3)
+        max_possible_modules = available_height // (self.modules['card']['min_height'] + self.grid_unit * 2)
+        actual_max_modules = min(max_modules, int(max_possible_modules))
+        
+        for i, task in enumerate(tasks[:actual_max_modules]):
+            if module_y + self.modules['card']['min_height'] > todo_y + container_height - title_padding:
                 break
             
-            prefix = "✓ " if task['completed'] else "○ "
-            color = self.completed_color if task['completed'] else self.text_color
+            module_height = self.create_task_module(
+                draw, task,
+                todo_x + title_padding,
+                module_y,
+                module_width,
+                completed_count,
+                total_count
+            )
             
-            prefix_bbox = draw.textbbox((0, 0), prefix, font=task_font)
-            prefix_width = prefix_bbox[2] - prefix_bbox[0]
-            
-            draw.text((x_pad, y), prefix, fill=color, font=task_font)
-            
-            words = task['text'].split()
-            lines = []
-            current_line = []
-            
-            for word in words:
-                test_line = ' '.join(current_line + [word])
-                bbox = draw.textbbox((0, 0), test_line, font=task_font)
-                if bbox[2] - bbox[0] + prefix_width <= max_width:
-                    current_line.append(word)
-                else:
-                    if current_line:
-                        lines.append(' '.join(current_line))
-                    current_line = [word]
-            
-            if current_line:
-                lines.append(' '.join(current_line))
-            
-            for i, line in enumerate(lines):
-                if y > max_y:
-                    break
-                draw.text((x_pad + (prefix_width if i == 0 else 0), y), line, fill=color, font=task_font)
-                y += self.font_size + self.line_spacing
-            
-            y += self.line_spacing
+            module_y += module_height
+            visible_tasks += 1
         
-        draw.text((x_pad, height - self.padding - self.font_size), 
-                 f"Updated: {datetime.now().strftime('%H:%M')}", fill=self.completed_color, font=task_font)
+        # Show remaining count if any
+        if len(tasks) > visible_tasks:
+            remaining_y = todo_y + container_height - title_padding - int(self.typography['body']['size'] * 2)
+            draw.text(
+                (todo_x + title_padding, remaining_y),
+                f"+{len(tasks) - visible_tasks} more tasks",
+                fill=self.colors['text_secondary'],
+                font=body_font
+            )
         
-        img.paste(todo_img, (width - todo_width, 0), todo_img)
-        img.convert('RGB').save(self.wallpaper_file, quality=95)
+        # Footer with timestamp
+        footer_y = todo_y + container_height - title_padding - self.typography['body']['size']
+        draw.text(
+            (todo_x + todo_section_width - title_padding - 100, footer_y),
+            f"Updated {datetime.now().strftime('%H:%M')}",
+            fill=self.colors['text_disabled'],
+            font=body_font
+        )
+        
+        # Save with high quality
+        img.save(self.wallpaper_file, quality=95, optimize=True)
     
     def set_wallpaper(self):
         """Set the generated image as desktop wallpaper"""
@@ -299,12 +598,13 @@ class TodoWallpaperGenerator:
     def run(self):
         """Run the wallpaper generator with file monitoring"""
         print(f"""
-Todo Wallpaper Generator
-========================
+Todo Wallpaper Generator - Enhanced Design
+==========================================
 Watching: {self.todo_file}
 Output: {self.wallpaper_file}
 Resolution: {self.resolution}
 AI Images: {'Enabled' if self.use_ai_images else 'Disabled'}
+Design: Unified grid system with consistent spacing
 
 Press Ctrl+C to stop
 """)
